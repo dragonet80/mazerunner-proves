@@ -144,7 +144,7 @@ class Sensors {
     // always calculate the adjustment for testing. It may not get used.
     float pTerm = STEERING_KP * m_cross_track_error;
     float dTerm = STEERING_KD * (m_cross_track_error - m_last_steering_error);
-    float adjustment = (pTerm + dTerm) * LOOP_INTERVAL;
+    float adjustment = pTerm + dTerm * LOOP_FREQUENCY;
     adjustment = constrain(adjustment, -STEERING_ADJUST_LIMIT, STEERING_ADJUST_LIMIT);
     m_last_steering_error = m_cross_track_error;
     m_steering_adjustment = adjustment;
@@ -315,10 +315,10 @@ class Sensors {
  private:
   float m_last_steering_error = 0;
   volatile bool m_active = false;
-  volatile float m_cross_track_error;
-  volatile float m_steering_adjustment;
-  volatile int m_front_sum;
-  volatile int m_front_diff;
+  volatile float m_cross_track_error = 0;
+  volatile float m_steering_adjustment = 0;
+  volatile int m_front_sum = 0;
+  volatile int m_front_diff = 0;
 };
 
 #endif

@@ -56,6 +56,7 @@ class Mouse {
     m_heading = NORTH;
   }
 
+  //***************************************************************************//
   /**
    * change the mouse heading but do not physically turn
    */
@@ -108,6 +109,7 @@ class Mouse {
     }
   }
 
+  //***************************************************************************//
   /**
    * These convenience functions will bring the robot to a halt
    * before actually turning.
@@ -131,7 +133,6 @@ class Mouse {
   }
 
   //***************************************************************************//
-
   /** Search turns
    *
    * These turns assume that the robot is crossing the cell boundary but is still
@@ -161,9 +162,11 @@ class Mouse {
 
     bool triggered_by_sensor = false;
     float turn_point = FULL_CELL + HALF_CELL - params.entry_offset;
+    // Now we wait until we detect the turn start condition
+    // TODO: there is room for improvement here
     while (motion.position() < turn_point) {
       if (sensors.get_front_sum() > trigger) {
-        motion.set_target_velocity(motion.velocity());
+        motion.set_target_velocity(motion.velocity());  // prevent speed changes
         triggered_by_sensor = true;
         break;
       }
@@ -183,6 +186,9 @@ class Mouse {
   /***
    * bring the mouse to a halt in the center of the current cell. That is,
    * the cell it is entering.
+   *
+   * On entry, we assume that the mouse knows its position in terms of the
+   * distance from the start of the last cell.
    */
   void stop_at_center() {
     bool has_wall = sensors.see_front_wall;
@@ -311,6 +317,41 @@ class Mouse {
     sensors.set_steering_mode(STEERING_OFF);
   }
 
+  /****************************************************************************/
+  /***
+   * This function moves the mouse from the start position to a target location
+   * which is specified as a distance from the start position.
+   *
+   * Use this function to help with calibration of the encoders and wheel
+   * diameter.
+   *
+   * You could also modify it to generate sensor data or control
+   * teemetry while running.
+   *
+   * @param mm the distance from the start location to the target position
+   */
+  void run(int mm) {
+    Serial.println(F("Follow TO"));
+    m_handStart = true;
+    m_location = START;
+    m_heading = NORTH;
+    maze.initialise();
+    sensors.wait_for_user_start();
+    sensors.enable();
+    motion.reset_drive_system();
+    sensors.set_steering_mode(STEER_NORMAL);
+    motion.move(BACK_WALL_TO_CENTER, SEARCH_SPEED, SEARCH_SPEED, SEARCH_ACCELERATION);
+    motion.set_position(HALF_CELL);
+    motion.move(mm, SEARCH_SPEED, 0, SEARCH_ACCELERATION);
+    Serial.println();
+    Serial.println(F("Arrived!  "));
+    delay(250);
+    sensors.disable();
+    motion.reset_drive_system();
+    sensors.set_steering_mode(STEERING_OFF);
+  }
+
+  /****************************************************************************/
   /***
    * search_to will cause the mouse to move to the given target cell
    * using safe, exploration speeds and turns.
@@ -411,6 +452,106 @@ class Mouse {
     sensors.set_steering_mode(STEERING_OFF);
   }
 
+  /****************************************************************************/
+  bool getRandomBool() {
+    return rand() % 2 == 0;
+  }
+
+  /****************************************************************************/
+  // when searching the maze select a random direction for the next cell
+  uint8_t randomHeading() {
+    uint8_t turnDirection;
+    bool leftWall = sensors.see_left_wall;
+    bool rightWall = sensors.see_right_wall;
+    bool frontWall = sensors.see_front_wall;
+
+    if (leftWall && rightWall && frontWall) {
+      turnDirection = BACK;
+    } else if (leftWall && rightWall) {
+      turnDirection = AHEAD;
+    } else if (rightWall && frontWall) {
+      turnDirection = LEFT;
+    } else if (leftWall) {
+      if (getRandomBool()) {
+        turnDirection = RIGHT;
+      } else {
+        turnDirection = AHEAD;
+      }
+    } else if (rightWall) {
+      if (getRandomBool()) {
+        turnDirection = LEFT;
+      } else {
+        turnDirection = AHEAD;
+      }
+    } else {
+      if (getRandomBool()) {
+        turnDirection = LEFT;
+      } else {
+        turnDirection = RIGHT;
+      }
+    }
+
+    return turnDirection;
+  }
+
+  /****************************************************************************/
+  void wander_to(Location target) {
+    target = Location(16, 16);
+    Serial.println(F("Wandering..."));
+    m_handStart = true;
+    m_location = START;
+    m_heading = NORTH;
+    maze.initialise();
+    sensors.wait_for_user_start();
+    sensors.enable();
+    motion.reset_drive_system();
+    sensors.set_steering_mode(STEERING_OFF);
+    motion.move(BACK_WALL_TO_CENTER, SEARCH_SPEED, SEARCH_SPEED, SEARCH_ACCELERATION);
+    motion.set_position(HALF_CELL);
+    Serial.println(F("Off we go..."));
+    motion.wait_until_position(SENSING_POSITION);
+    // at the start of this loop we are always at the sensing point
+    while (m_location != target) {
+      if (switches.button_pressed()) {
+        break;
+      }
+      Serial.println();
+      reporter.log_action_status('-', ' ', m_location, m_heading);
+      sensors.set_steering_mode(STEER_NORMAL);
+      m_location = m_location.neighbour(m_heading);
+      update_map();
+      Serial.write(' ');
+      Serial.write('|');
+      Serial.write(' ');
+      char action = 'W';
+      uint8_t hdg = randomHeading();
+      if (hdg == LEFT) {
+        turn_left();
+        action = 'L';
+      } else if (hdg == AHEAD) {
+        move_ahead();
+        action = 'F';
+      } else if (hdg == RIGHT) {
+        turn_right();
+        action = 'R';
+      } else {
+        turn_back();
+        action = 'B';
+      }
+      reporter.log_action_status(action, ' ', m_location, m_heading);
+    }
+    // we are entering the target cell so come to an orderly
+    // halt in the middle of that cell
+    stop_at_center();
+    Serial.println();
+    Serial.println(F("Arrived!  "));
+    delay(250);
+    sensors.disable();
+    motion.reset_drive_system();
+    sensors.set_steering_mode(STEERING_OFF);
+  }
+
+  /****************************************************************************/
   /***
    * run_to should take the mouse to the target cell by whatever
    * fast means it has. There is no mapping done, just the motion.
@@ -435,8 +576,10 @@ class Mouse {
    */
   void run_to(Location target) {
     (void)target;
+    //// Not implemented
   }
 
+  /****************************************************************************/
   void turn_to_face(Heading newHeading) {
     unsigned char hdgChange = (newHeading + HEADING_COUNT - m_heading) % HEADING_COUNT;
     switch (hdgChange) {
@@ -455,6 +598,7 @@ class Mouse {
     m_heading = newHeading;
   }
 
+  /****************************************************************************/
   void update_map() {
     bool leftWall = sensors.see_left_wall;
     bool frontWall = sensors.see_front_wall;
@@ -497,6 +641,7 @@ class Mouse {
     }
   }
 
+  /****************************************************************************/
   /***
    * The mouse is expected to be in the start cell heading NORTH
    * The maze may, or may not, have been searched.
@@ -620,6 +765,7 @@ class Mouse {
       reporter.report_radial_track(use_raw);
       // reporter.print_wall_sensors();
     }
+    reporter.report_radial_track(use_raw);
     motion.reset_drive_system();
     motion.disable_drive();
     delay(100);
@@ -658,9 +804,9 @@ class Mouse {
     sensors.enable();
     delay(100);
     motion.reset_drive_system();
-    sensors.set_steering_mode(STEERING_OFF);
+    sensors.set_steering_mode(STEER_NORMAL);
     Serial.println(F("Edge positions:"));
-    motion.start_move(FULL_CELL - 30.0, 100, 0, 1000);
+    motion.start_move(FULL_CELL * 4, 500, 0, 1000);
     while (not motion.move_finished()) {
       if (sensors.lss.value > left_max) {
         left_max = sensors.lss.value;
@@ -684,6 +830,7 @@ class Mouse {
       }
       delay(5);
     }
+    Serial.println(encoders.robot_distance());
     Serial.print(F("Left: "));
     if (left_edge_found) {
       Serial.print(BACK_WALL_TO_CENTER + left_edge_position);
